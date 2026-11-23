@@ -1,0 +1,755 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Arrow Game</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: #111;
+    color: #eee;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    margin: 0;
+    overflow:hidden
+  }
+  h1 { margin-bottom: 10px; }
+  #instructions { margin-bottom: 20px; text-align: center; }
+  .arrows {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 0px;
+  }
+  .arrow-btn {
+    width: 70px;
+    height: 70px;
+    border-radius: 8px;
+    border: 2px solid #555;
+    background: #222;
+    color: #eee;
+    font-size: 28px;
+    cursor: pointer;
+    transition: transform 0.1s, background 0.1s, border-color 0.1s;
+  }
+  .arrow-btn:hover {
+    transform: scale(1.1);
+    background: #333;
+    border-color: #888;
+  }
+  #result { font-size: 20px; margin-top: 0px; min-height: 24px; }
+  #cpuChoice { margin-top: -5px; font-size: 16px; color: #ccc; }
+  #toggleThoughts, #resetMemory, #toggleHistory {
+    margin-top: 5px;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    background: #444;
+    color: #eee;
+    cursor: pointer;
+  }
+  #reset:hover, #resetMemory:hover { background: #666; }
+
+  #wins {font-size: 20px; color: #4dff4d;}
+  #losses {font-size: 20px; color: #ff4d4d; margin-bottom: 15px;}
+
+ @font-face {
+    font-family: 'Terminal'; /* Give your font a name */
+    src: url('Terminal.woff2') format('woff2'),
+         url('Terminal.woff') format('woff');
+    font-weight: normal;
+    font-style: normal;
+    font-display: swap;
+}
+
+/* History button */
+/*#toggleHistory {
+    position: fixed;
+    left: 15px;
+    top: 15px;
+    z-index: 1001;
+    padding: 8px 16px;
+    border-radius: 6px;
+    border: none;
+    background: #444;
+    color: #eee;
+    cursor: pointer;
+    transition: background .15s;
+}*/
+
+#toggleHistory:hover {
+    background: #666;
+}
+
+/* History panel */
+#historyPanel {
+    position: fixed;
+    left: -285px;
+    top: 0;
+    width: 270px;
+    height: 100vh;
+    background: #1b1b1b;
+    border-right: 2px solid #555;
+    box-sizing: border-box;
+    transition: left .25s ease;
+    z-index: 1000;
+    display: flex;
+    flex-direction: column;
+}
+
+#historyPanel.open {
+    left: 0;
+}
+
+#historyTitle {
+    padding: 15px;
+    font-size: 20px;
+    border-bottom: 1px solid #555;
+    text-align: center;
+    background: #222;
+}
+
+#historyLog {
+    flex: 1;
+    overflow-y: auto;
+    padding: 10px;
+    font-family: "Terminal", monospace;
+    font-size: 15px;
+    white-space: pre-wrap;
+    scrollbar-color: #1b1b1b #2b2b2b;
+}
+
+.historyEntry {
+    padding: 6px 0;
+    border-bottom: 1px solid #333;
+}
+</style>
+</head>
+<body>
+
+
+<div id="historyPanel">
+    <div id="historyTitle">Move History</div>
+    <div id="historyLog"></div>
+</div>
+
+<h1>Arrow Game</h1>
+<div id="instructions">
+  Pick an arrow (or press an arrow key). The CPU picks one too.<br>
+  If you pick the same arrow, you lose.<br>
+  If you pick different arrows, you win.<br><br>
+  See if you can get 10 wins before you get 10 losses!
+</div>
+
+<div id="wins">Wins: 0</div>
+<div id="losses">Losses: 0</div>
+
+<div class="arrows">
+  <button class="arrow-btn" data-arrow="up">↑</button>
+  <button class="arrow-btn" data-arrow="down">↓</button>
+  <button class="arrow-btn" data-arrow="left">←</button>
+  <button class="arrow-btn" data-arrow="right">→</button>
+</div>
+
+<div id="result"></div>
+<div id="cpuChoice"></div>
+
+<button id="resetMemory">Reset CPU Memory</button>
+<button id="toggleHistory">History</button>
+<button id="toggleThoughts">Toggle CPU Thoughts</button>
+
+<div id="cpuThoughts" style="
+    margin-top: 20px;
+    padding: 10px;
+    background: #222;
+    border: 1px solid #555;
+    width: 325px;
+    display: none;
+    font-family: 'Terminal', Georgia, serif;
+    max-height:320px;
+    text-wrap-mode:nowrap;
+">
+</div>
+
+
+<script>
+  const arrows = document.querySelectorAll('.arrow-btn');
+  const resultEl = document.getElementById('result');
+  const cpuChoiceEl = document.getElementById('cpuChoice');
+  const resetBtn = document.getElementById('reset');
+  const resetMemoryBtn = document.getElementById('resetMemory');
+  const toggleThoughtsBtn = document.getElementById("toggleThoughts");
+  const cpuThoughtsBox = document.getElementById("cpuThoughts");
+  const toggleHistoryBtn = document.getElementById("toggleHistory");
+  const historyPanel = document.getElementById("historyPanel");
+  const historyLog = document.getElementById("historyLog");
+
+toggleHistoryBtn.addEventListener("click", () => {
+    historyPanel.classList.toggle("open");
+});
+
+toggleThoughtsBtn.addEventListener("click", () => {
+    cpuThoughtsBox.style.display =
+        cpuThoughtsBox.style.display === "none" ? "block" : "none";
+});
+
+
+  let wins = 0;
+  let losses = 0;
+
+  const arrowNames = {
+    up: 'Up (↑)',
+    down: 'Down (↓)',
+    left: 'Left (←)',
+    right: 'Right (→)'
+  };
+
+  let history = [];
+  let markov = {};
+  let frequency = { up: 0, down: 0, left: 0, right: 0 };
+
+  function recordMarkov(prev, next) {
+    if (!markov[prev]) markov[prev] = {};
+    if (!markov[prev][next]) markov[prev][next] = 0;
+    markov[prev][next]++;
+  }
+
+  function predictMarkov() {
+    const last = history[history.length - 1];
+    if (!last || !markov[last]) return null;
+
+    let best = null;
+    let bestCount = -1;
+    for (const move in markov[last]) {
+      if (markov[last][move] > bestCount) {
+        bestCount = markov[last][move] + 1;
+        best = move;
+      }
+    }
+    /*if (bestCount > 20) {
+	bestCount = 0;
+	markov = {};
+	return predictRandom("Markov");
+    }*/
+    return { move: best, confidence: bestCount, predictor: "Markov" };
+  }
+
+  function predictFinal() {
+	return { move: history[history.length - 1], confidence: 100, predictor: "Final" };
+  }
+  
+  let repeatConfidence = 3;
+
+  function predictRepeat() {
+	let best = null;
+	const last = history[history.length - 2];
+	const lastlast = history[history.length - 3];
+	if (last === lastlast) {repeatConfidence = repeatConfidence + 4;}
+	else {repeatConfidence = 3;}
+	if (last === 'up') {
+		best = 'up';
+	} else if (last === 'left') {
+		best = 'left';
+	} else if (last === 'down') {
+		best = 'down';
+	} else if (last === 'right') {
+		best = 'right';
+	}
+	return { move: best, confidence: repeatConfidence, predictor: "Repeat" };
+  }
+
+  function predictOpposite() {
+	let best = null;
+	const last = history[history.length - 2];
+	if (last === 'up') {
+		best = 'down';
+	} else if (last === 'left') {
+		best = 'right';
+	} else if (last === 'down') {
+		best = 'up';
+	} else if (last === 'right') {
+		best = 'left';
+	}
+	return { move: best, confidence: 4, predictor: "Opposite" };
+  }
+
+  function predictRandom(source) {
+	let best = null;
+	let arrow1 = (Math.random() * 4).toFixed(0);
+	if (arrow1 === '0') {
+		best = 'up';
+	} else if (arrow1 === '1') {
+		best = 'down';
+	} else if (arrow1 === '2') {
+		best = 'left';
+	} else if (arrow1 === '3') {
+		best = 'right';
+	} else {
+		best = 'up';
+	}
+	if (source !== null) {
+		return { move: best, confidence: 1, predictor: `${source}:Random` };
+	} else {
+		return { move: best, confidence: 1, predictor: "Random" };
+	}
+  }
+
+  function predictPattern() {
+    const last = history[history.length - 2];
+
+    let timesUp = 0;
+    let timesDown = 0;
+    let timesLeft = 0;
+    let timesRight = 0;
+
+    for (let i = 0; i < history.length - 1; i++) {
+        if (history[i] === last) {
+            const next = history[i + 1];
+
+            if (next === "up") timesUp++;
+            else if (next === "down") timesDown++;
+            else if (next === "left") timesLeft++;
+            else if (next === "right") timesRight++;
+        }
+    }
+
+    let best = null;
+    let timesDone = 0;
+
+    if (timesUp > timesDone) {
+        best = "up";
+        timesDone = timesUp;
+    }
+    if (timesDown > timesDone) {
+        best = "down";
+        timesDone = timesDown;
+    }
+    if (timesLeft > timesDone) {
+        best = "left";
+        timesDone = timesLeft;
+    }
+    if (timesRight > timesDone) {
+        best = "right";
+        timesDone = timesRight;
+    }
+
+    let confidence;
+
+    confidence = timesDone + 3;
+
+    return { move: best, confidence, predictor: "Pattern" };
+}
+
+  function predictChange() {
+	if (history.length > 3) {
+		const last = history[history.length - 2];
+		const lastlast = history[history.length - 3];
+		const lastlastlast = history[history.length - 4];
+		let best = null;
+	
+		if (lastlastlast != last && lastlast != last) {
+			best = last;
+		} else {
+			best = lastlastlast;
+		}
+		return { move: best, confidence: 3, predictor: "Change" };
+	} else {
+		return predictRandom("Change");
+	}
+  }
+
+  function pattern1() {
+	const last = history[history.length - 2];
+	const lastlast = history[history.length - 3];
+
+	const pattern = ['up', 'left', 'down', 'right'];
+	let patternAt;
+
+	let best = null;
+	if (last === 'up') {
+		best = 'left';
+		patternAt = 'up';
+	} else if (last === 'left') {
+		best = 'down';
+		patternAt = 'left';
+	} else if (last === 'down') {
+		best = 'right';
+		patternAt = 'down';
+	} else if (last === 'right') {
+		best = 'up';
+		patternAt = 'right';
+	}
+	
+	let confidence;
+	const idx = (pattern.indexOf(patternAt) - 1 + pattern.length) % pattern.length;
+	if (lastlast === pattern[idx]) {
+	    confidence = 7;
+	} else {
+	    confidence = 3;
+	}
+
+	
+	return { move: best, confidence, predictor: "CommonPattern" };
+  }
+
+  function pattern2() {
+	const last = history[history.length - 2];
+	const lastlast = history[history.length - 3];
+
+	const pattern = ['up', 'right', 'down', 'left'];
+	let patternAt;
+
+	let best = null;
+	if (last === 'up') {
+		best = 'right';
+		patternAt = 'up';
+	} else if (last === 'right') {
+		best = 'down';
+		patternAt = 'right';
+	} else if (last === 'down') {
+		best = 'left';
+		patternAt = 'down';
+	} else if (last === 'left') {
+		best = 'up';
+		patternAt = 'left';
+	}
+	
+	let confidence;
+	const idx = (pattern.indexOf(patternAt) - 1 + pattern.length) % pattern.length;
+	if (lastlast === pattern[idx]) {
+	    confidence = 7;
+	} else {
+	    confidence = 3;
+	}
+
+	
+	return { move: best, confidence, predictor: "CommonPattern" };
+  }
+
+  function pattern3() {
+	const last = history[history.length - 2];
+	const lastlast = history[history.length - 3];
+
+	const pattern = ['up', 'left', 'right', 'down'];
+	let patternAt;
+
+	let best = null;
+	if (last === 'up') {
+		best = 'left';
+		patternAt = 'up';
+	} else if (last === 'left') {
+		best = 'right';
+		patternAt = 'left';
+	} else if (last === 'right') {
+		best = 'down';
+		patternAt = 'right';
+	} else if (last === 'down') {
+		best = 'up';
+		patternAt = 'down';
+	}
+	
+	let confidence;
+	const idx = (pattern.indexOf(patternAt) - 1 + pattern.length) % pattern.length;
+	if (lastlast === pattern[idx]) {
+	    confidence = 7;
+	} else {
+	    confidence = 3;
+	}
+
+	
+	return { move: best, confidence, predictor: "CommonPattern" };
+  }
+
+  function pattern4() {
+	const last = history[history.length - 2];
+	const lastlast = history[history.length - 3];
+
+	const pattern = ['left', 'right', 'up'];
+	let patternAt;
+
+	let best = null;
+	if (last === 'left') {
+		best = 'right';
+		patternAt = 'left';
+	} else if (last === 'right') {
+		best = 'up';
+		patternAt = 'right';
+	} else if (last === 'up') {
+		best = 'left';
+		patternAt = 'up';
+	} else if (last === 'down') {
+		return { best: 'down', confidence: 0, predictor: "CommonPattern" };
+	}
+	
+	let confidence;
+	const idx = (pattern.indexOf(patternAt) - 1 + pattern.length) % pattern.length;
+	if (lastlast === pattern[idx]) {
+	    confidence = 5;
+	} else {
+	    confidence = 3;
+	}
+
+	
+	return { move: best, confidence, predictor: "CommonPattern" };
+  }
+
+  function pattern5() {
+	const last = history[history.length - 2];
+	const lastlast = history[history.length - 3];
+
+	const pattern = ['up', 'right', 'left'];
+	let patternAt;
+
+	let best = null;
+	if (last === 'up') {
+		best = 'right';
+		patternAt = 'up';
+	} else if (last === 'right') {
+		best = 'left';
+		patternAt = 'right';
+	} else if (last === 'left') {
+		best = 'up';
+		patternAt = 'left';
+	} else if (last === 'down') {
+		return { best: 'down', confidence: 0, predictor: "CommonPattern" };
+	}
+	
+	let confidence;
+	const idx = (pattern.indexOf(patternAt) - 1 + pattern.length) % pattern.length;
+	if (lastlast === pattern[idx]) {
+	    confidence = 5;
+	} else {
+	    confidence = 3;
+	}
+
+	
+	return { move: best, confidence, predictor: "CommonPattern" };
+  }
+
+  function predictCommonPatterns() {
+	const predictions = [
+		pattern1(),
+		pattern2(),
+		pattern3(),
+		pattern4(),
+		pattern5()
+	].filter(p => p !== null);
+
+	let best = predictions.sort((b, a) => a.confidence - b.confidence);
+
+	return best[0];
+  }
+	
+		
+
+  function predictFrequencyBias() {
+    let best = null;
+    let bestCount = -1;
+    for (const move in frequency) {
+      if (frequency[move] > bestCount) {
+        bestCount = frequency[move];
+        best = move;
+      }
+    }
+    return { move: best, confidence: 5, predictor: "Frequency Bias" };
+  }
+
+  function predictPeriodicity() {
+    if (history.length < 6) return null;
+
+    let bestPeriod = null;
+    let bestScore = -1;
+
+    // Test periods from 2 to 10
+    for (let p = 2; p <= 10; p++) {
+        if (history.length < p * 2) continue;
+
+        let score = 0;
+        let comparisons = 0;
+
+        // Compare entire history against itself shifted by p
+        for (let i = p; i < history.length - 1; i++) {
+            comparisons++;
+            if (history[i] === history[i - p]) score++;
+        }
+
+        let ratio = score / comparisons;
+
+        if (ratio > bestScore) {
+            bestScore = ratio;
+            bestPeriod = p;
+        }
+    }
+
+    // If no meaningful periodicity found
+    if (bestPeriod === null || bestScore < 0.5) return predictRandom("Periodicity");
+
+    // Predict next move based on the period
+    const predicted = history[history.length - bestPeriod - 1];
+
+    // Confidence scales with how perfect the pattern is
+    const confidence = Math.floor(bestScore * 10) + 4;
+
+    return { move: predicted, confidence, predictor: "Periodicity" };
+}
+
+let combined = { up: 0, down: 0, left: 0, right: 0 };
+
+let start = true;
+let predictions;
+
+function cpuPick() {
+    if (start) {
+	predictions = [predictRandom(null)];
+	start = false;
+    } else {
+    	predictions = [
+    	    predictRandom(null),
+    	    //predictFrequencyBias(),
+    	    predictPeriodicity(),
+   	    predictChange(),
+   	    predictRepeat(),
+    	    predictOpposite(),
+	    predictPattern(),
+	    predictCommonPatterns()
+    	].filter(p => p !== null);
+    }
+
+    let combined = { up: 0, down: 0, left: 0, right: 0 };
+
+    let thoughts = "=== CPU Prediction Breakdown ===<br>";
+
+    predictions.forEach(p => {
+        combined[p.move] += p.confidence;
+        thoughts += `${p.predictor} → ${p.move} (confidence ${p.confidence})<br>`;
+    });
+
+    thoughts += "<br>Combined confidence:<br>";
+    for (const move in combined) {
+        thoughts += `${move}: ${combined[move]}<br>`;
+    }
+
+    let bestMove = null;
+    let bestScore = -Infinity;
+
+    for (const move in combined) {
+        if (combined[move] > bestScore) {
+            bestScore = combined[move];
+            bestMove = move;
+        }
+    }
+
+    thoughts += `<br><strong>CPU chooses: ${bestMove}</strong><br>`;
+    cpuThoughtsBox.innerHTML = thoughts;
+
+    return bestMove;
+}
+
+function predictNext() {
+	return cpuPick();
+}
+
+
+  function handlePlayerPick(playerArrow) {
+    history.push(playerArrow);
+    frequency[playerArrow]++;
+
+    if (history.length > 1) {
+      recordMarkov(history[history.length - 2], playerArrow);
+    }
+
+    const cpuArrow = cpuPick();
+    cpuChoiceEl.textContent = 'CPU picked: ' + arrowNames[cpuArrow];
+
+    if (playerArrow === cpuArrow) {
+      //resultEl.textContent = 'You picked the same arrow. You lose!';
+      losses ++;
+      document.getElementById("losses").textContent = "Losses: " + losses;
+      //resultEl.style.color = '#ff4d4d';
+    } else {
+      //resultEl.textContent = 'Different arrows! You win!';
+      wins ++;
+      document.getElementById("wins").textContent = "Wins: " + wins;
+      //resultEl.style.color = '#4dff4d';
+    }
+
+    arrows.forEach(btn => btn.disabled = true);
+    arrows.forEach(btn => btn.disabled = false);
+
+    const entry = document.createElement("div");
+entry.className = "historyEntry";
+
+const Result = document.createElement("div");
+Result.className = "historyEntry";
+
+let winOrLoss = "";
+
+if (playerArrow !== cpuArrow) {
+	Result.style.color = "#4dff4d";
+	Result.textContent = "Win";
+} else {
+	Result.style.color = "#ff4d4d";
+	Result.textContent = "Loss";
+}
+
+entry.innerHTML =
+    `You: ${arrowNames[playerArrow]}<br>` +
+    `CPU: ${arrowNames[cpuArrow]}<br>` +
+
+historyLog.prepend(Result);
+historyLog.prepend(entry);
+  }
+
+  arrows.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const arrow = btn.getAttribute('data-arrow');
+      handlePlayerPick(arrow);
+    });
+  });
+
+  document.addEventListener('keydown', (e) => {
+    const keyMap = {
+      ArrowUp: 'up',
+      ArrowDown: 'down',
+      ArrowLeft: 'left',
+      ArrowRight: 'right'
+    };
+    if (keyMap[e.key] && !arrows[0].disabled) {
+      e.preventDefault();
+      handlePlayerPick(keyMap[e.key]);
+    }
+    if (e.key === 't') {
+	cpuThoughtsBox.style.display =
+        cpuThoughtsBox.style.display === "none" ? "block" : "none";
+    } else if (e.key === 'r') {
+	history = [];
+    	markov = {};
+    	frequency = { up: 1, down: 1, left: 1, right: 1 };
+    	cpuThoughtsBox.textContent = 'CPU memory reset.';
+    	resultEl.style.color = '#eee';
+	historyLog.innerHTML = "";
+    } else if (e.key === 'h') {
+	historyPanel.classList.toggle("open");
+    }
+  });
+
+  resetBtn.addEventListener('click', () => {
+    resultEl.textContent = '';
+    cpuChoiceEl.textContent = '';
+    arrows.forEach(btn => btn.disabled = false);
+    historyLog.innerHTML = "";
+  });
+
+  resetMemoryBtn.addEventListener('click', () => {
+    history = [];
+    markov = {};
+    frequency = { up: 1, down: 1, left: 1, right: 1 };
+    cpuThoughtsBox.textContent = 'CPU memory reset.';
+    resultEl.style.color = '#eee';
+  });
+</script>
+
+</body>
+</html>
